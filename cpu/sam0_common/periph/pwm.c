@@ -22,6 +22,8 @@
  * @}
  */
 
+#include <assert.h>
+
 #include "cpu.h"
 #include "board.h"
 #include "periph/gpio.h"
@@ -203,7 +205,7 @@ static void poweroff(pwm_t dev)
     *cfg->tim.mclk &= ~cfg->tim.mclk_mask;
 #else
     PM->APBCMASK.reg &= ~cfg->tim.pm_mask;
-    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_GEN_GCLK7
+    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_GEN(SAM0_GCLK_DISABLED)
                       | GCLK_CLKCTRL_ID(cfg->tim.gclk_id);
 #endif
 }

@@ -28,6 +28,7 @@
 /boards/slstk340*/                          @basilfx
 /boards/sltb001a/                           @basilfx
 /boards/slwstk6000b/                        @basilfx
+/boards/slwstk6220a/                        @basilfx
 /boards/sodaq-sara-aff/                     @leandrolanzieri
 /boards/stk3*00/                            @basilfx
 /boards/openmote*/                          @MrKevinWeiss
@@ -77,6 +78,7 @@
 /drivers/dose/                              @jue89
 /drivers/ds18/                              @leandrolanzieri
 /drivers/itg320x/                           @gschorcht
+/drivers/mcp2515/                           @wosym
 /drivers/mrf24j40/                          @bergzand
 /drivers/pca9685/                           @gschorcht
 /drivers/sht3x/                             @gschorcht

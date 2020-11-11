@@ -20,8 +20,10 @@ BOARD_INSUFFICIENT_MEMORY := \
     esp8266-olimex-mod \
     esp8266-sparkfun-thing \
     feather-m0 \
+    feather-m0-lora \
     feather-m0-wifi \
     firefly \
+    frdm-kl43z \
     hamilton \
     i-nucleo-lrwan1 \
     ikea-tradfri \
@@ -83,6 +85,7 @@ BOARD_INSUFFICIENT_MEMORY := \
     sodaq-sara-aff \
     sodaq-sara-sff \
     spark-core \
+    stk3200 \
     stk3600 \
     stm32f030f4-demo \
     stm32f0discovery \

@@ -50,11 +50,17 @@ KCONFIG_OUT_DEP = $(KCONFIG_OUT_CONFIG).d
 
 # Add configurations to merge, in ascendent priority (i.e. a file overrides the
 # previous ones).
-ifeq (1, $(TEST_KCONFIG))
-  # KCONFIG_ADD_CONFIG holds a list of .config files that are merged for the
-  # initial configuration. This allows to split configurations in common files
-  # and share them among boards or cpus.
-  MERGE_SOURCES += $(KCONFIG_ADD_CONFIG)
+#
+# KCONFIG_ADD_CONFIG holds a list of .config files that are merged for the
+# initial configuration. This allows to split configurations in common files
+# and share them among boards or cpus.
+# This file will contain application default configurations used for Kconfig Test
+MERGE_SOURCES += $(KCONFIG_ADD_CONFIG)
+
+# Add configurations that only work when running the Kconfig test so far,
+# because they activate modules.
+ifeq (1,$(TEST_KCONFIG))
+  MERGE_SOURCES += $(wildcard $(APPDIR)/app.config.test)
 endif
 
 MERGE_SOURCES += $(wildcard $(KCONFIG_APP_CONFIG))
@@ -79,8 +85,16 @@ $(GENERATED_DIR): $(if $(MAKE_RESTARTS),,$(CLEAN))
 # build.
 SHOULD_RUN_KCONFIG ?= $(or $(wildcard $(APPDIR)/*.config), \
                            $(wildcard $(APPDIR)/Kconfig), \
-                           $(if $(CLEAN),,$(wildcard $(KCONFIG_OUT_CONFIG))), \
-                           $(filter menuconfig, $(MAKECMDGOALS)))
+                           $(if $(CLEAN),,$(wildcard $(KCONFIG_OUT_CONFIG))))
+
+ifneq (,$(filter menuconfig, $(MAKECMDGOALS)))
+  SHOULD_RUN_KCONFIG := 1
+endif
+
+# When testing Kconfig we should always run it
+ifeq (1,$(TEST_KCONFIG))
+  SHOULD_RUN_KCONFIG := 1
+endif
 
 # export variable to make it visible in other Makefiles
 export SHOULD_RUN_KCONFIG
@@ -146,7 +160,8 @@ $(KCONFIG_OUT_CONFIG): $(GENERATED_DEPENDENCIES_DEP) $(GENCONFIG) $(MERGE_SOURCE
 	$(Q) $(GENCONFIG) \
 	  --config-out=$(KCONFIG_OUT_CONFIG) \
 	  --file-list $(KCONFIG_OUT_DEP) \
-	  --kconfig-filename $(KCONFIG) \
+	  --kconfig-filename $(KCONFIG) $(if $(Q),,--debug )\
+	  $(if $(filter 1,$(KCONFIG_IGNORE_CONFIG_ERRORS)), --ignore-config-errors) \
 	  --config-sources $(MERGE_SOURCES) && \
 	  touch $(KCONFIG_OUT_CONFIG)
 
@@ -161,11 +176,27 @@ $(KCONFIG_GENERATED_AUTOCONF_HEADER_C): $(KCONFIG_OUT_CONFIG) $(GENERATED_DIR_DE
 	$(Q) $(GENCONFIG) \
 	  --header-path $(KCONFIG_GENERATED_AUTOCONF_HEADER_C) \
 	  --sync-deps $(KCONFIG_SYNC_DIR) \
-	  --kconfig-filename $(KCONFIG) \
+	  --kconfig-filename $(KCONFIG) $(if $(Q),,--debug ) \
+	   $(if $(filter 1,$(KCONFIG_IGNORE_CONFIG_ERRORS)), --ignore-config-errors) \
 	  --config-sources $(KCONFIG_OUT_CONFIG) && \
 	  touch $(KCONFIG_GENERATED_AUTOCONF_HEADER_C)
 
 # Try to load the list of Kconfig files used
 -include $(KCONFIG_OUT_DEP)
+
+# capture all ERROR_ prefixed Kconfig symbols
+_KCONFIG_ERROR_VARS = $(filter CONFIG_ERROR_%,$(.VARIABLES))
+_KCONFIG_ERRORS = $(foreach v,$(_KCONFIG_ERROR_VARS),$($(v)))
+
+# this checks that no Kconfig error symbols are set. These symbols are used
+# to indicate invalid conditions
+check-kconfig-errors: $(KCONFIG_OUT_CONFIG) $(KCONFIG_GENERATED_AUTOCONF_HEADER_C)
+ifneq (,$(_KCONFIG_ERRORS))
+	@$(COLOR_ECHO) "$(COLOR_RED) !! There are ERRORS in the configuration !! $(COLOR_RESET)"
+	@for err in $(_KCONFIG_ERRORS); do \
+	  echo "- $$err"; \
+	done
+	@false
+endif
 
 endif

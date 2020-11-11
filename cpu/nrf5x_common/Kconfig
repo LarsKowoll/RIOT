@@ -21,11 +21,6 @@ config CPU_COMMON_NRF5X
     select HAS_RADIO_NRFMIN
 
 ## Definition of specific features
-config HAS_BOOTLOADER_NRFUTIL
-    bool
-    help
-        Indicates that the nRF Util bootloader is being used.
-
 config HAS_BLE_NIMBLE
     bool
     help
@@ -46,11 +41,5 @@ config HAS_RADIO_NRFMIN
     help
         Indicates that a radio compatible with the nRF minimal radio driver is
         present.
-
-config HAS_BLE_NORDIC_SOFTDEVICE
-    bool
-    help
-        Indicates that Nordic SoftDevice support in RIOT has been verified on the
-        current platform.
 
 source "$(RIOTCPU)/cortexm_common/Kconfig"

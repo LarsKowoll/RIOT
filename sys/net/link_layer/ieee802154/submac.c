@@ -36,6 +36,7 @@ static void _tx_end(ieee802154_submac_t *submac, int status,
 
     ieee802154_radio_request_set_trx_state(dev, submac->state == IEEE802154_STATE_LISTEN ? IEEE802154_TRX_STATE_RX_ON : IEEE802154_TRX_STATE_TRX_OFF);
 
+    submac->wait_for_ack = false;
     submac->tx = false;
     while (ieee802154_radio_confirm_set_trx_state(dev) == -EAGAIN) {}
     submac->cb->tx_done(submac, status, info);
@@ -154,13 +155,12 @@ void ieee802154_submac_rx_done_cb(ieee802154_submac_t *submac)
     if (!_does_handle_ack(dev) && submac->wait_for_ack) {
         uint8_t ack[3];
 
-        if (ieee802154_radio_indication_rx(dev, ack, 3, NULL) &&
+        if (ieee802154_radio_read(dev, ack, 3, NULL) &&
             ack[0] & IEEE802154_FCF_TYPE_ACK) {
             ieee802154_submac_ack_timer_cancel(submac);
             ieee802154_tx_info_t tx_info;
             tx_info.retrans = submac->retrans;
             bool fp = (ack[0] & IEEE802154_FCF_FRAME_PEND);
-            submac->wait_for_ack = false;
             ieee802154_radio_set_rx_mode(submac->dev,
                                          IEEE802154_RX_AACK_ENABLED);
             _tx_end(submac, fp ? TX_STATUS_FRAME_PENDING : TX_STATUS_SUCCESS,
@@ -169,6 +169,18 @@ void ieee802154_submac_rx_done_cb(ieee802154_submac_t *submac)
     }
     else {
         submac->cb->rx_done(submac);
+
+        /* The Radio HAL will be in "FB Lock" state. We need to do a state
+         * transition here in order to release it */
+        ieee802154_trx_state_t next_state = submac->state == IEEE802154_STATE_LISTEN ? IEEE802154_TRX_STATE_RX_ON : IEEE802154_TRX_STATE_TRX_OFF;
+
+        /* Some radios will run some house keeping tasks on RX_DONE (e.g
+         * sending ACK frames). In such case we need to wait until the radio is
+         * not busy
+         */
+        while (ieee802154_radio_request_set_trx_state(submac->dev, next_state) == -EBUSY);
+
+        while (ieee802154_radio_confirm_set_trx_state(submac->dev) == -EAGAIN) {}
     }
 }
 
@@ -182,6 +194,9 @@ static void _handle_tx_success(ieee802154_submac_t *submac,
 
     if (ieee802154_radio_has_frame_retrans(dev) ||
         ieee802154_radio_has_irq_ack_timeout(dev) || !submac->wait_for_ack) {
+        if (!ieee802154_radio_has_frame_retrans_info(dev)) {
+            info->retrans = -1;
+        }
         _tx_end(submac, info->status, info);
     }
     else {
@@ -213,7 +228,6 @@ static void _handle_tx_no_ack(ieee802154_submac_t *submac)
 
     if (ieee802154_radio_has_frame_retrans(dev)) {
         ieee802154_radio_request_set_trx_state(dev, IEEE802154_TRX_STATE_RX_ON);
-        submac->wait_for_ack = false;
         _tx_end(submac, TX_STATUS_NO_ACK, NULL);
     }
     else {
@@ -275,7 +289,8 @@ int ieee802154_send(ieee802154_submac_t *submac, const iolist_t *iolist)
     return 0;
 }
 
-int ieee802154_submac_init(ieee802154_submac_t *submac)
+int ieee802154_submac_init(ieee802154_submac_t *submac, const network_uint16_t *short_addr,
+                           const eui64_t *ext_addr)
 {
     ieee802154_dev_t *dev = submac->dev;
 
@@ -285,8 +300,8 @@ int ieee802154_submac_init(ieee802154_submac_t *submac)
     ieee802154_radio_request_on(dev);
 
     /* generate EUI-64 and short address */
-    luid_get_eui64(&submac->ext_addr);
-    luid_get_short(&submac->short_addr);
+    memcpy(&submac->ext_addr, ext_addr, sizeof(eui64_t));
+    memcpy(&submac->short_addr, short_addr, sizeof(network_uint16_t));
     submac->panid = CONFIG_IEEE802154_DEFAULT_PANID;
 
     submac->be.min = CONFIG_IEEE802154_DEFAULT_CSMA_CA_MIN_BE;
@@ -342,13 +357,22 @@ int ieee802154_set_phy_conf(ieee802154_submac_t *submac, uint16_t channel_num,
         return -ENETDOWN;
     }
 
-    int res = ieee802154_radio_config_phy(dev, &conf);
+    int res;
+    if ((res = ieee802154_radio_request_set_trx_state(dev, IEEE802154_TRX_STATE_TRX_OFF)) < 0) {
+        return res;
+    }
+
+    res = ieee802154_radio_config_phy(dev, &conf);
 
     if (res >= 0) {
         submac->channel_num = channel_num;
         submac->channel_page = channel_page;
         submac->tx_pow = tx_pow;
     }
+    while (ieee802154_radio_confirm_set_trx_state(dev) == -EAGAIN) {}
+
+    ieee802154_radio_request_set_trx_state(dev, submac->state == IEEE802154_STATE_LISTEN ? IEEE802154_TRX_STATE_RX_ON : IEEE802154_TRX_STATE_TRX_OFF);
+    while (ieee802154_radio_confirm_set_trx_state(dev) == -EAGAIN) {}
 
     return res;
 }

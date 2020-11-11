@@ -22,6 +22,7 @@
  * @}
  */
 
+#include <assert.h>
 #include <inttypes.h>
 #include <string.h>
 
@@ -31,6 +32,7 @@
 #include "net/nanocoap_sock.h"
 #include "thread.h"
 #include "periph/pm.h"
+#include "xtimer.h"
 
 #include "suit/transport/coap.h"
 #include "net/sock/util.h"
@@ -49,7 +51,7 @@
 #include "progress_bar.h"
 #endif
 
-#define ENABLE_DEBUG (0)
+#define ENABLE_DEBUG 0
 #include "debug.h"
 
 #ifndef SUIT_COAP_STACKSIZE

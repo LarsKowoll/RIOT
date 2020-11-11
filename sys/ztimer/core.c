@@ -32,7 +32,7 @@
 #endif
 #include "ztimer.h"
 
-#define ENABLE_DEBUG (0)
+#define ENABLE_DEBUG 0
 #include "debug.h"
 
 static void _add_entry_to_list(ztimer_clock_t *clock, ztimer_base_t *entry);
@@ -311,7 +311,7 @@ void ztimer_handler(ztimer_clock_t *clock)
 {
     DEBUG("ztimer_handler(): %p now=%" PRIu32 "\n", (void *)clock, clock->ops->now(
               clock));
-    if (ENABLE_DEBUG) {
+    if (IS_ACTIVE(ENABLE_DEBUG)) {
         _ztimer_print(clock);
     }
 
@@ -364,7 +364,7 @@ void ztimer_handler(ztimer_clock_t *clock)
 
     _ztimer_update(clock);
 
-    if (ENABLE_DEBUG) {
+    if (IS_ACTIVE(ENABLE_DEBUG)) {
         _ztimer_print(clock);
     }
     DEBUG("ztimer_handler(): %p done.\n", (void *)clock);

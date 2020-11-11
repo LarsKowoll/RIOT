@@ -73,9 +73,10 @@ static inline bool _is_letimer(timer_t dev)
 #endif
 }
 
-static void _letimer_init(tim_t dev, unsigned long freq)
+static void _letimer_init(tim_t dev, uint32_t freq)
 {
     (void) freq;
+#if LETIMER_COUNT
     assert(freq == 32768);
 
     LETIMER_TypeDef *tim = timer_config[dev].timer.dev;
@@ -92,9 +93,12 @@ static void _letimer_init(tim_t dev, unsigned long freq)
     LETIMER_Init_TypeDef letimerInit = LETIMER_INIT_DEFAULT;
     letimerInit.enable = false;
     LETIMER_Init(tim, &letimerInit);
+#else
+    (void) dev;
+#endif
 }
 
-static void _timer_init(tim_t dev, unsigned long freq)
+static void _timer_init(tim_t dev, uint32_t freq)
 {
     TIMER_TypeDef *pre, *tim;
 
@@ -139,7 +143,7 @@ static void _timer_init(tim_t dev, unsigned long freq)
     TIMER_IntEnable(tim, TIMER_IEN_CC0 | TIMER_IEN_CC1 | TIMER_IEN_CC2);
 }
 
-int timer_init(tim_t dev, unsigned long freq, timer_cb_t callback, void *arg)
+int timer_init(tim_t dev, uint32_t freq, timer_cb_t callback, void *arg)
 {
     /* test if given timer device is valid */
     if (dev >= TIMER_NUMOF) {
@@ -181,6 +185,7 @@ int timer_set_absolute(tim_t dev, int channel, unsigned int value)
         tim->CC[channel].CTRL = TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
     }
     else {
+#if LETIMER_COUNT
         LETIMER_TypeDef *tim = timer_config[dev].timer.dev;
 
         /* LETIMER is countdown only, so we invert the value */
@@ -201,6 +206,7 @@ int timer_set_absolute(tim_t dev, int channel, unsigned int value)
                 return -2;
                 break;
         }
+#endif
     }
 
     return 0;
@@ -213,6 +219,7 @@ int timer_clear(tim_t dev, int channel)
         tim->CC[channel].CTRL = _TIMER_CC_CTRL_MODE_OFF;
     }
     else {
+#if LETIMER_COUNT
         LETIMER_TypeDef *tim = timer_config[dev].timer.dev;
         switch (channel)
         {
@@ -227,30 +234,33 @@ int timer_clear(tim_t dev, int channel)
             default:
                 return -1;
         }
+#endif
     }
     return 0;
 }
 
 unsigned int timer_read(tim_t dev)
 {
+#if LETIMER_COUNT
     if (_is_letimer(dev)) {
         /* LETIMER is countdown only, so we invert the value */
         return (unsigned int) 0xffff
                     - LETIMER_CounterGet(timer_config[dev].timer.dev);
     }
-    else {
-        return (unsigned int) TIMER_CounterGet(timer_config[dev].timer.dev);
-    }
+#endif
+    return (unsigned int) TIMER_CounterGet(timer_config[dev].timer.dev);
 }
 
 void timer_stop(tim_t dev)
 {
     if (_is_letimer(dev)) {
+#if LETIMER_COUNT
         LETIMER_TypeDef *tim = timer_config[dev].timer.dev;
         if (tim->STATUS & LETIMER_STATUS_RUNNING) {
             pm_unblock(EFM32_LETIMER_PM_BLOCKER);
         }
         LETIMER_Enable(timer_config[dev].timer.dev, false);
+#endif
     }
     else {
         TIMER_TypeDef *tim = timer_config[dev].timer.dev;
@@ -265,11 +275,13 @@ void timer_stop(tim_t dev)
 void timer_start(tim_t dev)
 {
     if (_is_letimer(dev)) {
+#if LETIMER_COUNT
         LETIMER_TypeDef *tim = timer_config[dev].timer.dev;
         if (!(tim->STATUS & LETIMER_STATUS_RUNNING)) {
             pm_block(EFM32_LETIMER_PM_BLOCKER);
         }
         LETIMER_Enable(timer_config[dev].timer.dev, true);
+#endif
     }
     else {
         TIMER_TypeDef *tim = timer_config[dev].timer.dev;
@@ -284,6 +296,7 @@ void timer_start(tim_t dev)
 static void _timer_isr(tim_t dev)
 {
     if (_is_letimer(dev)) {
+#if LETIMER_COUNT
         LETIMER_TypeDef *tim = timer_config[dev].timer.dev;
 
         for (int i = 0; i < timer_config[dev].channel_numof; i++) {
@@ -294,6 +307,7 @@ static void _timer_isr(tim_t dev)
                 isr_ctx[dev].cb(isr_ctx[dev].arg, i);
             }
         }
+#endif
     }
     else {
         TIMER_TypeDef *tim = timer_config[dev].timer.dev;
@@ -322,3 +336,17 @@ void TIMER_1_ISR(void)
     _timer_isr(1);
 }
 #endif /* TIMER_1_ISR */
+
+#ifdef TIMER_2_ISR
+void TIMER_2_ISR(void)
+{
+    _timer_isr(2);
+}
+#endif /* TIMER_2_ISR */
+
+#ifdef TIMER_3_ISR
+void TIMER_3_ISR(void)
+{
+    _timer_isr(3);
+}
+#endif /* TIMER_3_ISR */

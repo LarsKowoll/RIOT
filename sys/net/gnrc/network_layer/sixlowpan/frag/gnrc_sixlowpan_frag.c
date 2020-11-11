@@ -16,6 +16,9 @@
  * @author  Peter Kietzmann <peter.kietzmann@haw-hamburg.de>
  */
 
+#include <assert.h>
+#include <inttypes.h>
+
 #include "kernel_types.h"
 #include "net/gnrc/pktbuf.h"
 #include "net/gnrc/netapi.h"
@@ -27,14 +30,8 @@
 #include "net/sixlowpan.h"
 #include "utlist.h"
 
-#define ENABLE_DEBUG    (0)
+#define ENABLE_DEBUG 0
 #include "debug.h"
-
-#if ENABLE_DEBUG
-/* For PRIu16 etc. */
-#include <inttypes.h>
-#endif
-
 
 static inline uint16_t _floor8(uint16_t length)
 {
@@ -116,9 +113,7 @@ static gnrc_pktsnip_t *_build_frag_pkt(gnrc_pktsnip_t *pkt,
     frag_hdr->tag = byteorder_htons(fbuf->tag);
 
 
-    LL_PREPEND(frag, netif);
-
-    return frag;
+    return gnrc_pkt_prepend(frag, netif);
 }
 
 static uint16_t _copy_pkt_to_frag(uint8_t *data, const gnrc_pktsnip_t *pkt,

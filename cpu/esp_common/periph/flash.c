@@ -20,6 +20,7 @@
 
 #if MODULE_MTD
 
+#include <assert.h>
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
@@ -47,7 +48,7 @@
 
 #endif /* MCU_ESP32 */
 
-#define ENABLE_DEBUG (0)
+#define ENABLE_DEBUG 0
 #include "debug.h"
 
 #define ESP_PART_TABLE_ADDR         0x8000 /* TODO configurable as used in Makefile.include */

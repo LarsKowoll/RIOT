@@ -101,6 +101,10 @@ typedef enum {
      */
     IEEE802154_CAP_IRQ_RX_START,
     /**
+     * @brief the device reports the start of a frame (SFD) was sent.
+     */
+    IEEE802154_CAP_IRQ_TX_START,
+    /**
      * @brief the device reports the end of the CCA procedure
      */
     IEEE802154_CAP_IRQ_CCA_DONE,
@@ -187,6 +191,15 @@ typedef enum {
     IEEE802154_RADIO_INDICATION_RX_START,
 
     /**
+     * @brief the transceiver sent out a valid SFD
+     *
+     * This event is present if radio has @ref IEEE802154_CAP_IRQ_TX_START cap.
+     *
+     * @note The SFD of an outgoing ACK (AUTOACK) should not be indicated
+     */
+    IEEE802154_RADIO_INDICATION_TX_START,
+
+    /**
      * @brief the transceiver received a frame and lies in the
      *        internal framebuffer.
      *
@@ -197,14 +210,11 @@ typedef enum {
      * The transceiver or driver MUST handle the ACK reply if the Ack Request
      * bit is set in the received frame and promiscuous mode is disabled.
      *
-     * The transceiver is in @ref IEEE802154_TRX_STATE_RX_ON state when
-     * this function is called, but with framebuffer protection (either
-     * dynamic framebuffer protection or disabled RX). Thus, the frame
-     * won't be overwritten before calling the @ref ieee802154_radio_indication_rx
-     * function. However, @ref ieee802154_radio_indication_rx MUST be called in
-     * order to receive new frames. If there's no interest in the
-     * frame, the function can be called with a NULL buffer to drop
-     * the frame.
+     * The transceiver will be in a "FB Lock" state where no more frames are
+     * received. This is done in order to avoid overwriting the Frame Buffer
+     * with new frame arrivals.  In order to leave this state, the upper layer
+     * must set the transceiver state (@ref
+     * ieee802154_radio_ops::request_set_trx_state).
      */
     IEEE802154_RADIO_INDICATION_RX_DONE,
 
@@ -252,7 +262,7 @@ typedef struct {
  */
 typedef struct {
     ieee802154_tx_status_t status;      /**< status of the last transmission */
-    uint8_t retrans;                    /**< number of frame retransmissions of the last TX */
+    int8_t retrans;                     /**< number of frame retransmissions of the last TX */
 } ieee802154_tx_info_t;
 
 /**
@@ -359,7 +369,8 @@ struct ieee802154_radio_ops {
     /**
      * @brief Write a frame into the framebuffer.
      *
-     * This function shouldn't do any checks, so the frame MUST be valid.
+     * This function shouldn't do any checks, so the frame MUST be valid. The
+     * previous content of the framebuffer is replaced by @p psdu.
      *
      * @param[in] dev IEEE802.15.4 device descriptor
      * @param[in] psdu PSDU frame to be sent
@@ -427,21 +438,19 @@ struct ieee802154_radio_ops {
     int (*len)(ieee802154_dev_t *dev);
 
     /**
-     * @brief Process the RX done indication
+     * @brief Read a frame from the internal framebuffer
      *
      * This function reads the received frame from the internal framebuffer.
-     * It should try to copy the received frame into @p buf and
-     * then unlock the framebuffer (in order to be able to receive more
-     * frames).
+     * It should try to copy the received PSDU frame into @p buf. The FCS
+     * field will **not** be copied and its size **not** be taken into account
+     * for the return value.
      *
-     * @pre the device is on and an @ref IEEE802154_RADIO_INDICATION_RX_DONE
-     *      event was issued.
-     *
-     * @post the state is @ref IEEE802154_TRX_STATE_RX_ON
+     * @post It's not safe to call this function again before setting the
+     *       transceiver state to @ref IEEE802154_TRX_STATE_RX_ON (thus flushing
+     *       the RX FIFO).
      *
      * @param[in] dev IEEE802.15.4 device descriptor
-     * @param[out] buf buffer to write the received PSDU frame into. If NULL,
-     *             the frame is not copied.
+     * @param[out] buf buffer to write the received PSDU frame into.
      * @param[in] size size of @p buf
      * @param[in] info information of the received frame (LQI, RSSI). Can be
      *            NULL if this information is not needed.
@@ -449,9 +458,7 @@ struct ieee802154_radio_ops {
      * @return number of bytes written in @p buffer (0 if @p buf == NULL)
      * @return -ENOBUFS if the frame doesn't fit in @p
      */
-    int (*indication_rx)(ieee802154_dev_t *dev, void *buf, size_t size,
-                         ieee802154_rx_info_t *info);
-
+    int (*read)(ieee802154_dev_t *dev, void *buf, size_t size, ieee802154_rx_info_t *info);
     /**
      * @brief Turn off the device
      *
@@ -513,7 +520,8 @@ struct ieee802154_radio_ops {
      * @brief Request a PHY state change
      *
      * @note @ref ieee802154_radio_ops::confirm_set_trx_state MUST be used to
-     * finish the state transition.
+     * finish the state transition. Also, setting the state to
+     * @ref IEEE802154_TRX_STATE_RX_ON flushes the RX FIFO.
      *
      * @pre the device is on
      *
@@ -628,13 +636,14 @@ struct ieee802154_radio_ops {
      * function should return -EINVAL
      *
      * @pre the device is on
+     * @pre the transceiver state is @ref IEEE802154_TRX_STATE_TRX_OFF
      *
      * @param[in] dev IEEE802.15.4 device descriptor
      * @param[in] conf the PHY configuration
      *
-     * @return 0 on success
-     * @return -EINVAL if the configuration is not valid for the device.
-     * @return negative errno on error
+     * @return 0        on success
+     * @return -EINVAL  if the configuration is not valid for the device.
+     * @return <0       error, return value is negative errno indicating the cause.
      */
     int (*config_phy)(ieee802154_dev_t *dev, const ieee802154_phy_conf_t *conf);
 
@@ -759,23 +768,22 @@ static inline int ieee802154_radio_len(ieee802154_dev_t *dev)
 }
 
 /**
- * @brief Shortcut to @ref ieee802154_radio_ops::indication_rx
+ * @brief Shortcut to @ref ieee802154_radio_ops::read
  *
  * @param[in] dev IEEE802.15.4 device descriptor
- * @param[out] buf buffer to write the received frame into. If NULL, the
- *             frame is not copied.
+ * @param[out] buf buffer to write the received frame into.
  * @param[in] size size of @p buf
  * @param[in] info information of the received frame (LQI, RSSI). Can be
  *            NULL if this information is not needed.
  *
- * @return result of @ref ieee802154_radio_ops::indication_rx
+ * @return result of @ref ieee802154_radio_ops::read
  */
-static inline int ieee802154_radio_indication_rx(ieee802154_dev_t *dev,
+static inline int ieee802154_radio_read(ieee802154_dev_t *dev,
                                                  void *buf,
                                                  size_t size,
                                                  ieee802154_rx_info_t *info)
 {
-    return dev->driver->indication_rx(dev, buf, size, info);
+    return dev->driver->read(dev, buf, size, info);
 }
 
 /**
@@ -808,6 +816,8 @@ static inline int ieee802154_radio_set_cca_mode(ieee802154_dev_t *dev,
 
 /**
  * @brief Shortcut to @ref ieee802154_radio_ops::config_phy
+ *
+ * @pre the transceiver state is @ref IEEE802154_TRX_STATE_TRX_OFF
  *
  * @param[in] dev IEEE802.15.4 device descriptor
  * @param[in] conf the PHY configuration
@@ -1079,6 +1089,22 @@ static inline bool ieee802154_radio_has_irq_tx_done(ieee802154_dev_t *dev)
 static inline bool ieee802154_radio_has_irq_rx_start(ieee802154_dev_t *dev)
 {
     return dev->driver->get_cap(dev, IEEE802154_CAP_IRQ_RX_START);
+}
+
+/**
+ * @brief Check if the device supports TX start interrupt
+ *
+ * Internally this function calls ieee802154_radio_ops::get_cap with @ref
+ * IEEE802154_CAP_IRQ_TX_START.
+ *
+ * @param[in] dev IEEE802.15.4 device descriptor
+ *
+ * @return true if the device has support
+ * @return false otherwise
+ */
+static inline bool ieee802154_radio_has_irq_tx_start(ieee802154_dev_t *dev)
+{
+    return dev->driver->get_cap(dev, IEEE802154_CAP_IRQ_TX_START);
 }
 
 /**

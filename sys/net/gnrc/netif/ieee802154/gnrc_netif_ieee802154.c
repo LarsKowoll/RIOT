@@ -21,12 +21,10 @@
 #include "net/ipv6/hdr.h"
 #endif
 
-#define ENABLE_DEBUG (0)
+#define ENABLE_DEBUG 0
 #include "debug.h"
 
-#if defined(MODULE_OD) && ENABLE_DEBUG
 #include "od.h"
-#endif
 
 static int _send(gnrc_netif_t *netif, gnrc_pktsnip_t *pkt);
 static gnrc_pktsnip_t *_recv(gnrc_netif_t *netif);
@@ -40,7 +38,7 @@ static const gnrc_netif_ops_t ieee802154_ops = {
 };
 
 int gnrc_netif_ieee802154_create(gnrc_netif_t *netif, char *stack, int stacksize,
-                                 char priority, char *name, netdev_t *dev)
+                                 char priority, const char *name, netdev_t *dev)
 {
     return gnrc_netif_create(netif, stack, stacksize, priority, name, dev,
                              &ieee802154_ops);
@@ -132,15 +130,12 @@ static gnrc_pktsnip_t *_recv(gnrc_netif_t *netif)
             hdr->lqi = rx_info.lqi;
             hdr->rssi = rx_info.rssi;
             gnrc_netif_hdr_set_netif(hdr, netif);
-            LL_APPEND(pkt, netif_snip);
+            pkt = gnrc_pkt_append(pkt, netif_snip);
         }
         else {
             /* Normal mode, try to parse the frame according to IEEE 802.15.4 */
             gnrc_pktsnip_t *ieee802154_hdr, *netif_hdr;
             gnrc_netif_hdr_t *hdr;
-#if ENABLE_DEBUG
-            char src_str[GNRC_NETIF_HDR_L2ADDR_PRINT_LEN];
-#endif
             size_t mhr_len = ieee802154_get_frame_hdr_len(pkt->data);
 
             /* nread was checked for <= 0 before so we can safely cast it to
@@ -193,18 +188,20 @@ static gnrc_pktsnip_t *_recv(gnrc_netif_t *netif)
             hdr->rssi = rx_info.rssi;
             gnrc_netif_hdr_set_netif(hdr, netif);
             dev->driver->get(dev, NETOPT_PROTO, &pkt->type, sizeof(pkt->type));
-#if ENABLE_DEBUG
-            DEBUG("_recv_ieee802154: received packet from %s of length %u\n",
-                  gnrc_netif_addr_to_str(gnrc_netif_hdr_get_src_addr(hdr),
-                                         hdr->src_l2addr_len,
-                                         src_str),
-                  nread);
-#if defined(MODULE_OD)
-            od_hex_dump(pkt->data, nread, OD_WIDTH_DEFAULT);
-#endif
-#endif
+            if (IS_ACTIVE(ENABLE_DEBUG)) {
+                char src_str[GNRC_NETIF_HDR_L2ADDR_PRINT_LEN];
+
+                DEBUG("_recv_ieee802154: received packet from %s of length %u\n",
+                    gnrc_netif_addr_to_str(gnrc_netif_hdr_get_src_addr(hdr),
+                                            hdr->src_l2addr_len,
+                                            src_str),
+                    nread);
+                if (IS_USED(MODULE_OD)) {
+                    od_hex_dump(pkt->data, nread, OD_WIDTH_DEFAULT);
+                }
+            }
             gnrc_pktbuf_remove_snip(pkt, ieee802154_hdr);
-            LL_APPEND(pkt, netif_hdr);
+            pkt = gnrc_pkt_append(pkt, netif_hdr);
         }
 
         DEBUG("_recv_ieee802154: reallocating.\n");

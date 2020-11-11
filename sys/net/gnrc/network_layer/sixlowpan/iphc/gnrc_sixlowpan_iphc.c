@@ -38,7 +38,7 @@
 
 #include "net/gnrc/sixlowpan/iphc.h"
 
-#define ENABLE_DEBUG    (0)
+#define ENABLE_DEBUG 0
 #include "debug.h"
 
 /* dispatch byte definitions */
@@ -797,8 +797,8 @@ void gnrc_sixlowpan_iphc_recv(gnrc_pktsnip_t *sixlo, void *rbuf_ptr,
                                                        ipv6))) {
             /* add netif header to `ipv6` so its flags can be used when
              * forwarding the fragment */
-            LL_DELETE(sixlo, netif);
-            LL_APPEND(ipv6, netif);
+            sixlo = gnrc_pkt_delete(sixlo, netif);
+            ipv6 = gnrc_pkt_append(ipv6, netif);
             /* provide space to copy remaining payload */
             if (gnrc_pktbuf_realloc_data(ipv6, uncomp_hdr_len + sixlo->size -
                                          payload_offset) != 0) {
@@ -862,8 +862,8 @@ void gnrc_sixlowpan_iphc_recv(gnrc_pktsnip_t *sixlo, void *rbuf_ptr,
 #endif  /* MODULE_GNRC_SIXLOWPAN_FRAG_VRB */
     }
     else {
-        LL_DELETE(sixlo, netif);
-        LL_APPEND(ipv6, netif);
+        sixlo = gnrc_pkt_delete(sixlo, netif);
+        ipv6 = gnrc_pkt_append(ipv6, netif);
         gnrc_sixlowpan_dispatch_recv(ipv6, NULL, page);
     }
     gnrc_pktbuf_release(sixlo);
@@ -923,16 +923,16 @@ static int _forward_frag(gnrc_pktsnip_t *pkt, gnrc_pktsnip_t *frag_hdr,
     DEBUG("to (%s, %u)\n",
           gnrc_netif_addr_to_str(vrbe->super.dst, vrbe->super.dst_len,
                                  addr_str), vrbe->out_tag);
-#if ENABLE_DEBUG && defined(MODULE_OD)
-    DEBUG("Original fragmentation header:\n");
-    od_hex_dump(frag_hdr->data, frag_hdr->size, OD_WIDTH_DEFAULT);
-    DEBUG("IPHC headers + payload:\n");
-    frag_hdr = pkt;
-    while (frag_hdr) {
+    if (IS_ACTIVE(ENABLE_DEBUG) && IS_USED(MODULE_OD)) {
+        DEBUG("Original fragmentation header:\n");
         od_hex_dump(frag_hdr->data, frag_hdr->size, OD_WIDTH_DEFAULT);
-        frag_hdr = frag_hdr->next;
+        DEBUG("IPHC headers + payload:\n");
+        frag_hdr = pkt;
+        while (frag_hdr) {
+            od_hex_dump(frag_hdr->data, frag_hdr->size, OD_WIDTH_DEFAULT);
+            frag_hdr = frag_hdr->next;
+        }
     }
-#endif
     gnrc_pktbuf_release(pkt);
     (void)frag_hdr;
     (void)page;

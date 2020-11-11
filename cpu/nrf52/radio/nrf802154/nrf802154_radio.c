@@ -16,6 +16,8 @@
  * @author      José I. Alamos <jose.alamos@haw-hamburg.de>
  * @}
  */
+
+#include <assert.h>
 #include <string.h>
 #include <errno.h>
 
@@ -27,7 +29,7 @@
 #include "nrf802154.h"
 #include "net/ieee802154/radio.h"
 
-#define ENABLE_DEBUG    (0)
+#define ENABLE_DEBUG        0
 #include "debug.h"
 
 #define ED_RSSISCALE        (4U)    /**< RSSI scale for internal HW value */
@@ -172,6 +174,7 @@ static int _confirm_transmit(ieee802154_dev_t *dev, ieee802154_tx_info_t *info)
 
     _state = STATE_IDLE;
     NRF_RADIO->SHORTS = DEFAULT_SHORTS;
+    DEBUG("[nrf802154] TX Finished\n");
 
     return 0;
 }
@@ -185,10 +188,12 @@ static int _request_transmit(ieee802154_dev_t *dev)
 
     _state = STATE_TX;
     if (cfg.cca_send) {
+        DEBUG("[nrf802154] Transmit a frame using CCA\n");
         NRF_RADIO->SHORTS = CCA_SHORTS;
         NRF_RADIO->TASKS_RXEN = 1;
     }
     else {
+        DEBUG("[nrf802154] Transmit a frame using Direct Transmission\n");
         NRF_RADIO->TASKS_TXEN = 1;
     }
 
@@ -204,7 +209,7 @@ static inline int8_t _hwval_to_ieee802154_dbm(uint8_t hwval)
     return (ED_RSSISCALE * hwval) + ED_RSSIOFFS;
 }
 
-static int _indication_rx(ieee802154_dev_t *dev, void *buf, size_t max_size,
+static int _read(ieee802154_dev_t *dev, void *buf, size_t max_size,
                           ieee802154_rx_info_t *info)
 {
     (void) dev;
@@ -234,8 +239,6 @@ static int _indication_rx(ieee802154_dev_t *dev, void *buf, size_t max_size,
         memcpy(buf, &rxbuf[1], pktlen);
     }
 
-    NRF_RADIO->TASKS_START = 1;
-
     return pktlen;
 }
 
@@ -246,9 +249,11 @@ static int _confirm_cca(ieee802154_dev_t *dev)
 
     switch (_state) {
     case STATE_CCA_CLEAR:
+        DEBUG("[nrf802154] Channel is clear\n");
         res = true;
         break;
     case STATE_CCA_BUSY:
+        DEBUG("[nrf802154] Channel is busy\n");
         res = false;
         break;
     default:
@@ -264,9 +269,11 @@ static int _request_cca(ieee802154_dev_t *dev)
     (void) dev;
 
     if (_state != STATE_RX) {
+        DEBUG("[nrf802154] CCA request fail: EBUSY\n");
         return -EBUSY;
     }
 
+    DEBUG("[nrf802154] CCA Requested\n");
     /* Go back to RxIdle state and start CCA */
     NRF_RADIO->TASKS_STOP = 1;
     NRF_RADIO->TASKS_CCASTART = 1;
@@ -300,6 +307,7 @@ static int set_cca_threshold(ieee802154_dev_t *dev, int8_t threshold)
 
 static void _set_txpower(int16_t txpower)
 {
+    DEBUG("[nrf802154]: Setting TX power to %i\n", txpower);
     if (txpower > 8) {
         NRF_RADIO->TXPOWER = RADIO_TXPOWER_TXPOWER_Pos8dBm;
     }
@@ -362,6 +370,7 @@ static int _confirm_set_trx_state(ieee802154_dev_t *dev)
         radio_state == RADIO_STATE_STATE_TxDisable || radio_state == RADIO_STATE_STATE_RxDisable) {
         return -EAGAIN;
     }
+    DEBUG("[nrf802154]: State transition finished\n");
     return 0;
 }
 
@@ -370,6 +379,7 @@ static int _request_set_trx_state(ieee802154_dev_t *dev, ieee802154_trx_state_t 
     (void) dev;
 
     if (_state != STATE_IDLE && _state != STATE_RX) {
+        DEBUG("[nrf802154]: set_trx_state failed: -EBUSY\n");
         return -EBUSY;
     }
 
@@ -381,15 +391,18 @@ static int _request_set_trx_state(ieee802154_dev_t *dev, ieee802154_trx_state_t 
     switch (state) {
     case IEEE802154_TRX_STATE_TRX_OFF:
         _state = STATE_IDLE;
+        DEBUG("[nrf802154]: Request state to TRX_OFF\n");
         break;
     case IEEE802154_TRX_STATE_RX_ON:
         NRF_RADIO->PACKETPTR = (uint32_t)rxbuf;
         NRF_RADIO->TASKS_RXEN = 1;
         _state = STATE_RX;
+        DEBUG("[nrf802154]: Request state to RX_ON\n");
         break;
     case IEEE802154_TRX_STATE_TX_ON:
         NRF_RADIO->PACKETPTR = (uint32_t)txbuf;
         _state = STATE_IDLE;
+        DEBUG("[nrf802154]: Request state to TX_ON\n");
         break;
     }
 
@@ -420,6 +433,7 @@ static void _timer_cb(void *arg, int chan)
  */
 int nrf802154_init(void)
 {
+    DEBUG("[nrf802154]: Init\n");
     /* reset buffer */
     rxbuf[0] = 0;
     txbuf[0] = 0;
@@ -442,6 +456,16 @@ int nrf802154_init(void)
 void isr_radio(void)
 {
     ieee802154_dev_t *dev = &nrf802154_hal_dev;
+
+    if (NRF_RADIO->EVENTS_FRAMESTART) {
+        NRF_RADIO->EVENTS_FRAMESTART = 0;
+        if (_state == STATE_TX) {
+            dev->cb(dev, IEEE802154_RADIO_INDICATION_TX_START);
+        }
+        else if (_state == STATE_RX) {
+            dev->cb(dev, IEEE802154_RADIO_INDICATION_RX_START);
+        }
+    }
 
     if (NRF_RADIO->EVENTS_CCAIDLE) {
         NRF_RADIO->EVENTS_CCAIDLE = 0;
@@ -484,6 +508,8 @@ void isr_radio(void)
                 /* If radio is in promiscuos mode, indicate packet and
                  * don't event think of sending an ACK frame :) */
                 if (cfg.promisc) {
+                    DEBUG("[nrf802154] Promiscuous mode is enabled.\n");
+                    _state = STATE_IDLE;
                     dev->cb(dev, IEEE802154_RADIO_INDICATION_RX_DONE);
                 }
                 /* If the L2 filter passes, device if the frame is indicated
@@ -497,31 +523,33 @@ void isr_radio(void)
                         _state = STATE_ACK;
                     }
                     else {
+                        DEBUG("[nrf802154] RX frame doesn't require ACK frame.\n");
+                        _state = STATE_IDLE;
                         dev->cb(dev, IEEE802154_RADIO_INDICATION_RX_DONE);
                     }
                 }
                 /* In case the packet is an ACK and the ACK filter is disabled,
                  * indicate the frame reception */
                 else if (is_ack && !cfg.ack_filter) {
+                    DEBUG("[nrf802154] Received ACK.\n");
+                    _state = STATE_IDLE;
                     dev->cb(dev, IEEE802154_RADIO_INDICATION_RX_DONE);
                 }
                 /* If all failed, simply drop the frame and continue listening
                  * to incoming frames */
                 else {
+                    DEBUG("[nrf802154] Addr filter failed or ACK filter on.\n");
                     NRF_RADIO->TASKS_START = 1;
                 }
             }
             else {
+                DEBUG("[nrf802154] CRC fail.\n");
                 NRF_RADIO->TASKS_START = 1;
             }
             break;
         case STATE_ACK:
-            _state = STATE_RX;
-            NRF_RADIO->PACKETPTR = (uint32_t) rxbuf;
-            _disable();
-            /* This will take around 0.5 us */
-            while (NRF_RADIO->STATE != RADIO_STATE_STATE_Disabled) {};
-            NRF_RADIO->TASKS_RXEN = 1;
+            _state = STATE_IDLE;
+            DEBUG("[nrf52840] TX ACK done.")
             _set_ifs_timer(false);
             break;
         default:
@@ -542,6 +570,7 @@ static int _request_on(ieee802154_dev_t *dev)
 {
     (void) dev;
     _state = STATE_IDLE;
+    DEBUG("[nrf802154]: Request to turn on\n");
     NRF_RADIO->POWER = 1;
     /* make sure the radio is disabled/stopped */
     _disable();
@@ -571,6 +600,7 @@ static int _request_on(ieee802154_dev_t *dev)
     /* enable interrupts */
     NVIC_EnableIRQ(RADIO_IRQn);
     NRF_RADIO->INTENSET = RADIO_INTENSET_END_Msk |
+                          RADIO_INTENSET_FRAMESTART_Msk |
                           RADIO_INTENSET_CCAIDLE_Msk |
                           RADIO_INTENSET_CCABUSY_Msk;
 
@@ -580,12 +610,13 @@ static int _request_on(ieee802154_dev_t *dev)
 static int _config_phy(ieee802154_dev_t *dev, const ieee802154_phy_conf_t *conf)
 {
     (void) dev;
-    _disable();
     int8_t pow = conf->pow;
 
     if (pow < TX_POWER_MIN || pow > TX_POWER_MAX) {
         return -EINVAL;
     }
+
+    assert(NRF_RADIO->STATE == RADIO_STATE_STATE_Disabled);
 
     /* The value of this register represents the frequency offset (in MHz) from
      * 2400 MHz.  Channel 11 (first 2.4 GHz band channel) starts at 2405 MHz
@@ -594,14 +625,18 @@ static int _config_phy(ieee802154_dev_t *dev, const ieee802154_phy_conf_t *conf)
      */
     NRF_RADIO->FREQUENCY = (((uint8_t) conf->channel) - 10) * 5;
 
+    DEBUG("[nrf802154] setting channel to %i\n", conf->channel);
+    DEBUG("[nrf802154] setting TX power to %i\n", conf->pow);
     _set_txpower(pow);
+
     return 0;
 }
 
 static int _off(ieee802154_dev_t *dev)
 {
     (void) dev;
-    NRF_RADIO->POWER = 1;
+    DEBUG("[nrf802154] Turning off the radio\n");
+    NRF_RADIO->POWER = 0;
     return 0;
 }
 
@@ -610,6 +645,8 @@ static bool _get_cap(ieee802154_dev_t *dev, ieee802154_rf_caps_t cap)
     (void) dev;
     switch (cap) {
     case IEEE802154_CAP_24_GHZ:
+    case IEEE802154_CAP_IRQ_RX_START:
+    case IEEE802154_CAP_IRQ_TX_START:
     case IEEE802154_CAP_IRQ_TX_DONE:
     case IEEE802154_CAP_IRQ_CCA_DONE:
         return true;
@@ -621,6 +658,7 @@ static bool _get_cap(ieee802154_dev_t *dev, ieee802154_rf_caps_t cap)
 int _len(ieee802154_dev_t *dev)
 {
     (void) dev;
+    DEBUG("[nrf802154] Length of frame is %i\n", (size_t)rxbuf[0] - IEEE802154_FCS_LEN);
     return (size_t)rxbuf[0] - IEEE802154_FCS_LEN;
 }
 
@@ -633,15 +671,19 @@ int _set_cca_mode(ieee802154_dev_t *dev, ieee802154_cca_mode_t mode)
 
     switch (mode) {
     case IEEE802154_CCA_MODE_ED_THRESHOLD:
+        DEBUG("[nrf802154]: set CCA Mode to ED Threshold\n");
         tmp = RADIO_CCACTRL_CCAMODE_EdMode;
         break;
     case IEEE802154_CCA_MODE_CARRIER_SENSING:
         tmp = RADIO_CCACTRL_CCAMODE_CarrierOrEdMode;
+        DEBUG("[nrf802154]: set CCA Mode to Carrier Sensing\n");
         break;
     case IEEE802154_CCA_MODE_ED_THRESH_AND_CS:
+        DEBUG("[nrf802154]: set CCA Mode to ED Threshold AND Carrier Sensing\n");
         tmp = RADIO_CCACTRL_CCAMODE_CarrierAndEdMode;
         break;
     case IEEE802154_CCA_MODE_ED_THRESH_OR_CS:
+        DEBUG("[nrf802154]: set CCA Mode to ED Threshold OR Carrier Sensing\n");
         tmp = RADIO_CCACTRL_CCAMODE_CarrierOrEdMode;
         break;
     }
@@ -716,12 +758,24 @@ static int _set_csma_params(ieee802154_dev_t *dev, const ieee802154_csma_be_t *b
     return 0;
 }
 
+void nrf802154_setup(nrf802154_t *dev)
+{
+    (void) dev;
+#if IS_USED(MODULE_NETDEV_IEEE802154_SUBMAC)
+    netdev_t *netdev = (netdev_t*) dev;
+    netdev_register(netdev, NETDEV_NRF802154, 0);
+    DEBUG("[nrf802154] init submac.\n")
+    netdev_ieee802154_submac_init(&dev->netdev, &nrf802154_hal_dev);
+#endif
+    nrf802154_init();
+}
+
 static const ieee802154_radio_ops_t nrf802154_ops = {
     .write = _write,
+    .read = _read,
     .request_transmit = _request_transmit,
     .confirm_transmit = _confirm_transmit,
     .len = _len,
-    .indication_rx = _indication_rx,
     .off = _off,
     .request_on = _request_on,
     .confirm_on = _confirm_on,

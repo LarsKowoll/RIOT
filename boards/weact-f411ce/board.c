@@ -21,6 +21,7 @@
 #include "board.h"
 #include "cpu.h"
 #include "mtd.h"
+#include "timex.h"
 #include "mtd_spi_nor.h"
 #include "periph/gpio.h"
 
@@ -31,13 +32,14 @@ static const mtd_spi_nor_params_t _weact_nor_params = {
     .wait_chip_erase = 4800LU * US_PER_MS,
     .wait_32k_erase = 300LU * US_PER_MS,
     .wait_sector_erase = 70LU * US_PER_MS,
-    .wait_4k_erase = 70LU * US_PER_MS,
     .wait_chip_wake_up = 1LU * US_PER_MS,
     .clk = WEACT_411CE_NOR_SPI_CLK,
     .flag = WEACT_411CE_NOR_FLAGS,
     .spi = WEACT_411CE_NOR_SPI_DEV,
     .mode = WEACT_411CE_NOR_SPI_MODE,
     .cs = WEACT_411CE_NOR_SPI_CS,
+    .wp = GPIO_UNDEF,
+    .hold = GPIO_UNDEF,
     .addr_width = 3,
 };
 
