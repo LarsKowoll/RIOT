@@ -68,6 +68,7 @@ typedef enum {
      * Ethernet      | 6      | device MAC address
      * nrfmin        | 2      | device short address
      * CC110x        | 1      | device address
+     * NRF24L01+     | 5      | device address
      * LoRaWAN       | 4      | device address
      */
     NETOPT_ADDRESS,
@@ -766,6 +767,16 @@ typedef enum {
      * dBm or ASU (Arbitrary Strength Unit).
      */
     NETOPT_RSSI,
+
+    /**
+     * @brief (uint16_t) Set the battery monitor voltage (in mV).
+     *
+     * When set, a @ref SYS_BUS_POWER_EVENT_LOW_VOLTAGE event is generated
+     * on the SYS_BUS_POWER bus if the supply voltage falls below the set value.
+     *
+     * Set to 0 to disable battery monitoring.
+     */
+    NETOPT_BATMON,
 
     /**
      * @brief   (array of byte array) get link layer multicast groups as array

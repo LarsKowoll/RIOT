@@ -21,6 +21,8 @@
 #ifndef PERIPH_CPU_H
 #define PERIPH_CPU_H
 
+#include <limits.h>
+
 #include "cpu.h"
 #include "macros/units.h"
 
@@ -67,7 +69,8 @@ extern "C" {
 #elif defined(CPU_FAM_STM32F2) || defined(CPU_FAM_STM32F4) || \
       defined(CPU_FAM_STM32F7) || defined(CPU_FAM_STM32L4) || \
       defined(CPU_FAM_STM32WB) || defined(CPU_FAM_STM32G4) || \
-      defined(CPU_FAM_STM32G0) || defined(CPU_FAM_STM32L5)
+      defined(CPU_FAM_STM32G0) || defined(CPU_FAM_STM32L5) || \
+      defined(CPU_FAM_STM32MP1)
 #define CLOCK_LSI           (32000U)
 #else
 #error "error: LSI clock speed not defined for your target CPU"
@@ -94,11 +97,6 @@ extern "C" {
 #ifndef CPUID_ADDR
 #define CPUID_ADDR          (UID_BASE)
 #endif
-
-/**
- * @brief   We provide our own pm_off() function for all STM32-based CPUs
- */
-#define PROVIDES_PM_LAYERED_OFF
 
 /**
  * @brief   All STM timers have 4 capture-compare channels
@@ -190,10 +188,14 @@ typedef enum {
     AHB1,           /**< AHB1 bus */
     AHB2,           /**< AHB2 bus */
     AHB3,           /**< AHB3 bus */
+#elif defined(CPU_FAM_STM32MP1)
+    AHB1,           /**< AHB1 bus */
+    AHB2,           /**< AHB2 bus */
+    AHB3,           /**< AHB3 bus */
 #else
 #warning "unsupported stm32XX family"
 #endif
-#if defined(CPU_FAM_STM32WB)
+#if defined(CPU_FAM_STM32WB) || defined(CPU_FAM_STM32MP1)
     AHB4,           /**< AHB4 bus */
 #endif
 } bus_t;
@@ -216,7 +218,11 @@ typedef uint32_t gpio_t;
 /**
  * @brief   Define a CPU specific GPIO pin generator macro
  */
+#if defined(CPU_FAM_STM32MP1)
+#define GPIO_PIN(x, y)      ((GPIOA_BASE + (x << 12)) | y)
+#else
 #define GPIO_PIN(x, y)      ((GPIOA_BASE + (x << 10)) | y)
+#endif
 
 /**
  * @brief   Available GPIO ports
@@ -283,7 +289,8 @@ enum {
 #define PERIPH_I2C_NEED_WRITE_REG
 #define PERIPH_I2C_NEED_READ_REGS
 #if defined(CPU_FAM_STM32F1) || defined(CPU_FAM_STM32F2) || \
-    defined(CPU_FAM_STM32L1) || defined(CPU_FAM_STM32F4)
+    defined(CPU_FAM_STM32L1) || defined(CPU_FAM_STM32F4) || \
+    defined(CPU_FAM_STM32MP1)
 #define PERIPH_I2C_NEED_WRITE_REGS
 #endif
 /** @} */
@@ -674,7 +681,7 @@ typedef struct {
 #endif
 #if defined(CPU_FAM_STM32L0) || defined(CPU_FAM_STM32L4) || \
     defined(CPU_FAM_STM32WB) || defined(CPU_FAM_STM32G4) || \
-    defined(CPU_FAM_STM32L5)
+    defined(CPU_FAM_STM32L5) || defined(CPU_FAM_STM32MP1)
     uart_type_t type;       /**< hardware module type (USART or LPUART) */
     uint32_t clk_src;       /**< clock source used for UART */
 #endif
@@ -717,7 +724,8 @@ typedef struct {
 #define HAVE_I2C_SPEED_T
 typedef enum {
 #if defined(CPU_FAM_STM32F1) || defined(CPU_FAM_STM32F2) || \
-    defined(CPU_FAM_STM32F4) || defined(CPU_FAM_STM32L1)
+    defined(CPU_FAM_STM32F4) || defined(CPU_FAM_STM32L1) || \
+    defined(CPU_FAM_STM32MP1)
     I2C_SPEED_LOW,          /**< low speed mode: ~10kit/s */
 #endif
     I2C_SPEED_NORMAL,       /**< normal mode:  ~100kbit/s */
@@ -751,7 +759,8 @@ typedef struct {
     uint32_t rcc_sw_mask;   /**< bit to switch I2C clock */
 #endif
 #if defined(CPU_FAM_STM32F1) || defined(CPU_FAM_STM32F2) || \
-    defined(CPU_FAM_STM32F4) || defined(CPU_FAM_STM32L1)
+    defined(CPU_FAM_STM32F4) || defined(CPU_FAM_STM32L1) || \
+    defined(CPU_FAM_STM32MP1)
     uint32_t clk;           /**< bus frequency as defined in board config */
 #endif
     uint8_t irqn;           /**< I2C event interrupt number */
@@ -1035,7 +1044,6 @@ typedef enum {
  */
 typedef struct {
     eth_mode_t mode;            /**< Select configuration mode */
-    uint8_t addr[6];            /**< Ethernet MAC address */
     uint16_t speed;             /**< Speed selection */
     uint8_t dma;                /**< Locical CMA Descriptor used for TX */
     uint8_t dma_chan;           /**< DMA channel used for TX */
@@ -1139,6 +1147,23 @@ typedef struct eth_dma_desc {
 #define TX_DESC_STAT_LS         (BIT29) /**< If set, buffer contains last segment of frame to transmit */
 #define TX_DESC_STAT_IC         (BIT30) /**< If set, trigger IRQ on completion */
 #define TX_DESC_STAT_OWN        (BIT31) /**< If set, descriptor is owned by DMA, otherwise by CPU */
+/** @} */
+
+#ifdef MODULE_PERIPH_ETH_COMMON
+/**
+ * @brief   Perform ETH initialization common to periph_stm32_eth and
+ *          periph_ptp_clock
+ */
+void stm32_eth_common_init(void);
+#endif /* MODULE_PERIPH_ETH_COMMON */
+
+/**
+ * @name    PTP clock configuration
+ * @{
+ */
+#define HAVE_PTP_CLOCK_READ         1   /**< Native implementation available */
+#define HAVE_PTP_CLOCK_SET          1   /**< Native implementation available */
+#define HAVE_PTP_TIMER_SET_ABSOLUTE 1   /**< Native implementation available */
 /** @} */
 
 #ifdef __cplusplus

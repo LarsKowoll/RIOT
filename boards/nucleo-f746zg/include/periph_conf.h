@@ -30,7 +30,7 @@
 #endif
 
 #include "periph_cpu.h"
-#include "f2f4f7/cfg_clock_default_216.h"
+#include "clk_conf.h"
 #include "cfg_i2c1_pb8_pb9.h"
 #include "cfg_rtt_default.h"
 #include "cfg_timer_tim2.h"
@@ -219,7 +219,6 @@ static const spi_conf_t spi_config[] = {
  */
 static const eth_conf_t eth_config = {
     .mode = RMII,
-    .addr = { 0 },
     .speed = MII_BMCR_SPEED_100 | MII_BMCR_FULL_DPLX,
     .dma = 7,
     .dma_chan = 8,

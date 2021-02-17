@@ -23,8 +23,6 @@
 #ifndef CLK_F2F4F7_CFG_CLOCK_DEFAULT_84_H
 #define CLK_F2F4F7_CFG_CLOCK_DEFAULT_84_H
 
-#include "f2f4f7/cfg_clock_common.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -33,14 +31,20 @@ extern "C" {
  * @name    Clock PLL settings (84MHz)
  * @{
  */
-/* The following parameters configure a 84MHz system clock with HSE (8MHz or
-   16MHz) or HSI (16MHz) as PLL input clock */
+/* The following parameters configure a 84MHz system clock with HSE (8MHz, 16MHz
+   or 25MHz) or HSI (16MHz) as PLL input clock */
 #ifndef CONFIG_CLOCK_PLL_M
+#if IS_ACTIVE(CONFIG_BOARD_HAS_HSE) && (CLOCK_HSE == MHZ(25))
+#define CONFIG_CLOCK_PLL_M              (25)
+#else
 #define CONFIG_CLOCK_PLL_M              (4)
+#endif
 #endif
 #ifndef CONFIG_CLOCK_PLL_N
 #if IS_ACTIVE(CONFIG_BOARD_HAS_HSE) && (CLOCK_HSE == MHZ(8))
 #define CONFIG_CLOCK_PLL_N              (168)
+#elif IS_ACTIVE(CONFIG_BOARD_HAS_HSE) && (CLOCK_HSE == MHZ(25))
+#define CONFIG_CLOCK_PLL_N              (336)
 #else
 #define CONFIG_CLOCK_PLL_N              (84)
 #endif
@@ -67,14 +71,12 @@ extern "C" {
 #endif
 /** @} */
 
-#ifdef __cplusplus
-}
-#endif
-
-#include "f2f4f7/cfg_clock_values.h"
-
 #if CLOCK_CORECLOCK > MHZ(84)
 #error "SYSCLK cannot exceed 84MHz"
+#endif
+
+#ifdef __cplusplus
+}
 #endif
 
 #endif /* CLK_F2F4F7_CFG_CLOCK_DEFAULT_84_H */

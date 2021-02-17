@@ -1,12 +1,16 @@
 DEFAULT_MODULE += auto_init_at86rf215
 
-ifeq (,$(filter at86rf215m,$(USEMODULE)))
+ifneq (,$(filter at86rf215m,$(USEMODULE)))
   USEMODULE += at86rf215_subghz
 endif
 
 ifeq (,$(filter at86rf215_subghz at86rf215_24ghz,$(USEMODULE)))
   DEFAULT_MODULE += at86rf215_subghz
   DEFAULT_MODULE += at86rf215_24ghz
+endif
+
+ifneq (,$(filter at86rf215_batmon,$(USEMODULE)))
+  USEMODULE += sys_bus_power
 endif
 
 DEFAULT_MODULE += netdev_ieee802154_multimode
@@ -20,7 +24,12 @@ FEATURES_REQUIRED += periph_gpio
 FEATURES_REQUIRED += periph_gpio_irq
 FEATURES_REQUIRED += periph_spi
 
+ifneq (,$(filter gnrc,$(USEMODULE)))
+  ifeq (,$(filter gnrc_netif_pktq,$(USEMODULE)))
+    USEMODULE += at86rf215_blocking_send
+  endif
+endif
+
 USEMODULE += xtimer
-USEMODULE += netif
 USEMODULE += ieee802154
 USEMODULE += netdev_ieee802154

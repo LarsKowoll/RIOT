@@ -107,8 +107,14 @@ endif
 ifneq (,$(filter netopt,$(USEMODULE)))
   DIRS += net/crosslayer/netopt
 endif
+ifneq (,$(filter netstats_neighbor,$(USEMODULE)))
+  DIRS += net/netstats
+endif
 ifneq (,$(filter sema,$(USEMODULE)))
   DIRS += sema
+endif
+ifneq (,$(filter sema_inv,$(USEMODULE)))
+  DIRS += sema_inv
 endif
 ifneq (,$(filter sixlowpan,$(USEMODULE)))
   DIRS += net/network_layer/sixlowpan
@@ -157,6 +163,9 @@ ifneq (,$(filter shell_commands,$(USEMODULE)))
 endif
 ifneq (,$(filter suit%,$(USEMODULE)))
   DIRS += suit
+endif
+ifneq (,$(filter sys_bus,$(USEMODULE)))
+  DIRS += bus
 endif
 ifneq (,$(filter tcp,$(USEMODULE)))
   DIRS += net/transport_layer/tcp

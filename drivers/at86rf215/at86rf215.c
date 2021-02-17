@@ -125,7 +125,7 @@ if (!IS_ACTIVE(CONFIG_AT86RF215_USE_CLOCK_OUTPUT)){
 }
     /* allow to configure board-specific trim */
 #ifdef CONFIG_AT86RF215_TRIM_VAL
-    at86rf215_reg_write(dev, RG_RF_XOC, CONFIG_AT86RF215_TRIM_VAL | XOC_FS_MASK);
+    at86rf215_set_trim(dev, CONFIG_AT86RF215_TRIM_VAL);
 #endif
 
     /* enable TXFE & RXFE IRQ */
@@ -260,6 +260,10 @@ static void _block_while_busy(at86rf215_t *dev)
 
 static void at86rf215_block_while_busy(at86rf215_t *dev)
 {
+    if (!IS_ACTIVE(MODULE_AT86RF215_BLOCKING_SEND)) {
+        return;
+    }
+
     if (_tx_ongoing(dev)) {
         DEBUG("[at86rf215] Block while TXing\n");
         _block_while_busy(dev);
@@ -272,7 +276,12 @@ int at86rf215_tx_prepare(at86rf215_t *dev)
         return -EAGAIN;
     }
 
-    at86rf215_block_while_busy(dev);
+    if (!IS_ACTIVE(MODULE_AT86RF215_BLOCKING_SEND) && _tx_ongoing(dev)) {
+        return -EBUSY;
+    } else {
+        at86rf215_block_while_busy(dev);
+    }
+
     dev->tx_frame_len = IEEE802154_FCS_LEN;
 
     return 0;

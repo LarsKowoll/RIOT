@@ -102,6 +102,7 @@ void thread_sleep(void)
     }
 
     unsigned state = irq_disable();
+
     sched_set_status(thread_get_active(), STATUS_SLEEPING);
     irq_restore(state);
     thread_yield_higher();
@@ -183,6 +184,7 @@ uintptr_t thread_measure_stack_free(const char *stack)
     }
 
     uintptr_t space_free = (uintptr_t)stackp - (uintptr_t)stack;
+
     return space_free;
 }
 #endif
@@ -199,7 +201,7 @@ kernel_pid_t thread_create(char *stack, int stacksize, uint8_t priority,
     int total_stacksize = stacksize;
 #endif
 #ifndef CONFIG_THREAD_NAMES
-    (void) name;
+    (void)name;
 #endif
 
     /* align the stack on a 16/32bit boundary */
@@ -317,4 +319,32 @@ kernel_pid_t thread_create(char *stack, int stacksize, uint8_t priority,
     irq_restore(state);
 
     return pid;
+}
+
+static const char *state_names[STATUS_NUMOF] = {
+    [STATUS_STOPPED] = "stopped",
+    [STATUS_ZOMBIE] = "zombie",
+    [STATUS_SLEEPING] = "sleeping",
+    [STATUS_MUTEX_BLOCKED] = "bl mutex",
+    [STATUS_RECEIVE_BLOCKED] = "bl rx",
+    [STATUS_SEND_BLOCKED] = "bl send",
+    [STATUS_REPLY_BLOCKED] = "bl reply",
+    [STATUS_FLAG_BLOCKED_ANY] = "bl anyfl",
+    [STATUS_FLAG_BLOCKED_ALL] = "bl allfl",
+    [STATUS_MBOX_BLOCKED] = "bl mbox",
+    [STATUS_COND_BLOCKED] = "bl cond",
+    [STATUS_RUNNING] = "running",
+    [STATUS_PENDING] = "pending",
+};
+
+#define STATE_NAME_UNKNOWN "unknown"
+
+const char *thread_state_to_string(thread_status_t state)
+{
+    const char *name = state_names[state] ? state_names[state] : NULL;
+
+    assert(name != NULL); /* if compiling with assertions, this is an error that
+                             indicates that the table above is incomplete */
+
+    return (name != NULL) ? name : STATE_NAME_UNKNOWN;
 }
